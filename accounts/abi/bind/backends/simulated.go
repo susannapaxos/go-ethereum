@@ -50,7 +50,8 @@ var errBlockDoesNotExist = errors.New("block does not exist in blockchain")
 var errGasEstimationFailed = errors.New("gas required exceeds allowance or always failing transaction")
 
 // SimulatedBackend implements bind.ContractBackend, simulating a blockchain in
-// the background. Its main purpose is to allow easily testing contract bindings.
+// the background. It also implements interfaces.ChainReader and interfaces.TransactionReader.
+// Its main purpose is to allow easily testing contract bindings.
 type SimulatedBackend struct {
 	database   ethdb.Database   // In memory database to store our testing data
 	blockchain *core.BlockChain // Ethereum blockchain to handle the consensus
@@ -185,17 +186,37 @@ func (b *SimulatedBackend) TransactionByHash(ctx context.Context, txHash common.
 	return transaction, blockNumber != 0, nil
 }
 
+func (b *SimulatedBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+	block := b.blockchain.GetBlockByHash(hash)
+	if block == nil {
+		return nil, errBlockDoesNotExist
+	}
+	return block, nil
+}
+
 // BlockByNumber retrieves a block from the database by number, caching it
 // (associated with its hash) if found.
 func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
 	if number == nil {
 		return b.blockchain.CurrentBlock(), nil
 	}
+
 	block := b.blockchain.GetBlockByNumber(uint64(number.Int64()))
 	if block == nil {
 		return nil, errBlockDoesNotExist
 	}
+
 	return block, nil
+}
+
+// HeaderByHash returns a block header from the current canonical chain.
+func (b *SimulatedBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	header := b.blockchain.GetHeaderByHash(hash)
+	if header == nil {
+		return nil, errBlockDoesNotExist
+	}
+
+	return header, nil
 }
 
 // HeaderByNumber returns a block header from the current canonical chain. If number is
@@ -205,6 +226,24 @@ func (b *SimulatedBackend) HeaderByNumber(ctx context.Context, block *big.Int) (
 		return b.blockchain.CurrentHeader(), nil
 	}
 	return b.blockchain.GetHeaderByNumber(uint64(block.Int64())), nil
+}
+
+func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash common.Hash) (uint, error) {
+	block := b.blockchain.GetBlockByHash(blockHash)
+	if block == nil {
+		return uint(0), errBlockDoesNotExist
+	}
+
+	return uint(block.Transactions().Len()), nil
+}
+
+func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
+	block := b.blockchain.GetBlockByHash(blockHash)
+	if block == nil {
+		return nil, errBlockDoesNotExist
+	}
+
+	return block.Transactions()[index], nil
 }
 
 // PendingCodeAt returns the code associated with an account in the pending state.
@@ -420,6 +459,32 @@ func (b *SimulatedBackend) SubscribeFilterLogs(ctx context.Context, query ethere
 					case <-quit:
 						return nil
 					}
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+func (b *SimulatedBackend) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	// subscribe to a new head
+	sink := make(chan *types.Header)
+	sub := b.events.SubscribeNewHeads(sink)
+
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case head := <-sink:
+				select {
+				case ch <- head:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
 				}
 			case err := <-sub.Err():
 				return err
