@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/paxosglobal/go-ethereum/common/hexutil"
 	"math/big"
 	"sync"
 	"time"
@@ -183,7 +184,13 @@ func (b *SimulatedBackend) TransactionReceipt(ctx context.Context, txHash common
 // TransactionByHash returns the transaction with the given hash.
 func (b *SimulatedBackend) TransactionByHash(ctx context.Context, txHash common.Hash) (tx *types.Transaction, isPending bool, err error) {
 	transaction, _, blockNumber, _ := rawdb.ReadTransaction(b.database, txHash)
-	return transaction, blockNumber != 0, nil
+	return transaction, blockNumber == 0, nil
+}
+
+// TransactionByHash returns the transaction with the given hash.
+func (b *SimulatedBackend) TransactionByHashWithBlockNum(ctx context.Context, txHash common.Hash) (tx *types.Transaction, blockHexString string, err error) {
+	transaction, _, blockNumber, _ := rawdb.ReadTransaction(b.database, txHash)
+	return transaction, hexutil.EncodeUint64(blockNumber), nil
 }
 
 func (b *SimulatedBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
