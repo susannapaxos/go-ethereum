@@ -24,9 +24,9 @@ func (r Receipt) MarshalJSON() ([]byte, error) {
 		TxHash            common.Hash    `json:"transactionHash" gencodec:"required"`
 		ContractAddress   common.Address `json:"contractAddress"`
 		GasUsed           hexutil.Uint64 `json:"gasUsed" gencodec:"required"`
-		BlockHash         common.Hash    `json:"blockHash"`
-		BlockNumber       *hexutil.Big   `json:"blockNumber"`
-		TransactionIndex  *hexutil.Big   `json:"transactionIndex"`
+		BlockHash         common.Hash    `json:"blockHash,omitempty"`
+		BlockNumber       *hexutil.Big   `json:"blockNumber,omitempty"`
+		TransactionIndex  hexutil.Uint   `json:"transactionIndex"`
 	}
 	var enc Receipt
 	enc.PostState = r.PostState
@@ -39,7 +39,7 @@ func (r Receipt) MarshalJSON() ([]byte, error) {
 	enc.GasUsed = hexutil.Uint64(r.GasUsed)
 	enc.BlockHash = r.BlockHash
 	enc.BlockNumber = (*hexutil.Big)(r.BlockNumber)
-	enc.TransactionIndex = (*hexutil.Big)(r.TransactionIndex)
+	enc.TransactionIndex = hexutil.Uint(r.TransactionIndex)
 	return json.Marshal(&enc)
 }
 
@@ -54,9 +54,9 @@ func (r *Receipt) UnmarshalJSON(input []byte) error {
 		TxHash            *common.Hash    `json:"transactionHash" gencodec:"required"`
 		ContractAddress   *common.Address `json:"contractAddress"`
 		GasUsed           *hexutil.Uint64 `json:"gasUsed" gencodec:"required"`
-		BlockHash         *common.Hash    `json:"blockHash"`
-		BlockNumber       *hexutil.Big    `json:"blockNumber"`
-		TransactionIndex  *hexutil.Big    `json:"transactionIndex"`
+		BlockHash         *common.Hash    `json:"blockHash,omitempty"`
+		BlockNumber       *hexutil.Big    `json:"blockNumber,omitempty"`
+		TransactionIndex  *hexutil.Uint   `json:"transactionIndex"`
 	}
 	var dec Receipt
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -98,7 +98,7 @@ func (r *Receipt) UnmarshalJSON(input []byte) error {
 		r.BlockNumber = (*big.Int)(dec.BlockNumber)
 	}
 	if dec.TransactionIndex != nil {
-		r.TransactionIndex = (*big.Int)(dec.TransactionIndex)
+		r.TransactionIndex = uint(*dec.TransactionIndex)
 	}
 	return nil
 }

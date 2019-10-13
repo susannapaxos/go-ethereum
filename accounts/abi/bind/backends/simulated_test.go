@@ -1,21 +1,88 @@
+// Copyright 2019 The go-ethereum Authors
+// This file is part of the go-ethereum library.
+//
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The go-ethereum library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+
 package backends
 
 import (
 	"bytes"
 	"context"
+	"math/big"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"math/big"
-	"strings"
-	"testing"
-	"time"
 )
+
+func TestSimulatedBackend(t *testing.T) {
+	var gasLimit uint64 = 8000029
+	key, _ := crypto.GenerateKey() // nolint: gosec
+	auth := bind.NewKeyedTransactor(key)
+	genAlloc := make(core.GenesisAlloc)
+	genAlloc[auth.From] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+
+	sim := NewSimulatedBackend(genAlloc, gasLimit)
+	defer sim.Close()
+
+	// should return an error if the tx is not found
+	txHash := common.HexToHash("2")
+	_, isPending, err := sim.TransactionByHash(context.Background(), txHash)
+
+	if isPending {
+		t.Fatal("transaction should not be pending")
+	}
+	if err != ethereum.NotFound {
+		t.Fatalf("err should be `ethereum.NotFound` but received %v", err)
+	}
+
+	// generate a transaction and confirm you can retrieve it
+	code := `6060604052600a8060106000396000f360606040526008565b00`
+	var gas uint64 = 3000000
+	tx := types.NewContractCreation(0, big.NewInt(0), gas, big.NewInt(1), common.FromHex(code))
+	tx, _ = types.SignTx(tx, types.HomesteadSigner{}, key)
+
+	err = sim.SendTransaction(context.Background(), tx)
+	if err != nil {
+		t.Fatal("error sending transaction")
+	}
+
+	txHash = tx.Hash()
+	_, isPending, err = sim.TransactionByHash(context.Background(), txHash)
+	if err != nil {
+		t.Fatalf("error getting transaction with hash: %v", txHash.String())
+	}
+	if !isPending {
+		t.Fatal("transaction should have pending status")
+	}
+
+	sim.Commit()
+	tx, isPending, err = sim.TransactionByHash(context.Background(), txHash)
+	if err != nil {
+		t.Fatalf("error getting transaction with hash: %v", txHash.String())
+	}
+	if isPending {
+		t.Fatal("transaction should not have pending status")
+	}
+}
 
 var testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 
@@ -70,7 +137,7 @@ func TestSimulatedBackend_AdjustTime(t *testing.T) {
 	}
 	newTime := backend.pendingBlock.Time()
 
-	if big.NewInt(0).Sub(newTime, prevTime).Int64() != int64(time.Second.Seconds()) {
+	if newTime - prevTime != uint64(time.Second.Seconds()) {
 		t.Errorf("adjusted time not equal to a second. prev: %v, new: %v", prevTime, newTime)
 	}
 }
@@ -111,7 +178,7 @@ func TestSimulatedBackend_BlockByHash(t *testing.T) {
 	}
 
 	if block.Hash() != blockByHash.Hash() {
-        t.Errorf("did not get expected block")
+		t.Errorf("did not get expected block")
 	}
 }
 
@@ -406,8 +473,8 @@ func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
 		t.Errorf("could not get transaction in the lastest block with hash %v: %v", lastBlock.Hash().String(), err)
 	}
 
-    if signedTx.Hash().String() != transaction.Hash().String() {
-        t.Errorf("received transaction that did not match the sent transaction. expected hash %v, got hash %v", signedTx.Hash().String(), transaction.Hash().String())
+	if signedTx.Hash().String() != transaction.Hash().String() {
+		t.Errorf("received transaction that did not match the sent transaction. expected hash %v, got hash %v", signedTx.Hash().String(), transaction.Hash().String())
 	}
 }
 
@@ -644,7 +711,7 @@ func TestSimulatedBackend_CallContract(t *testing.T) {
 		t.Errorf("result of contract call was empty: %v", res)
 	}
 	// use strings contains since actual response is padded with many \x00 bytes and a space
-    if !strings.Contains(string(res), "hello world") {
+	if !strings.Contains(string(res), "hello world") {
 		t.Errorf("response from calling contract was expected to be 'hello world' instead received %v", string(res))
 	}
 }
@@ -675,7 +742,7 @@ func TestSimulatedBackend_FilterLogs(t *testing.T) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: nil,
-		ToBlock: nil,
+		ToBlock:   nil,
 		Addresses: []common.Address{testAddr, contractAddr},
 	}
 	logs, err := backend.FilterLogs(bgCtx, query)
@@ -683,7 +750,7 @@ func TestSimulatedBackend_FilterLogs(t *testing.T) {
 		t.Errorf("could not filter logs: %v", err)
 	}
 
-	for	_, l := range logs {
-        t.Error(l)
+	for _, l := range logs {
+		t.Error(l)
 	}
 }
