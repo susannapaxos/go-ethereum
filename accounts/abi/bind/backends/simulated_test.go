@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -109,6 +110,7 @@ func TestNewSimulatedBackend(t *testing.T) {
 			testAddr: {Balance: expectedBal},
 		}, 10000000,
 	)
+	defer backend.Close()
 
 	if backend.config != params.AllEthashProtocolChanges {
 		t.Errorf("expected backend config to equal params.AllEthashProtocolChanges, got %v", backend.config)
@@ -129,6 +131,7 @@ func TestSimulatedBackend_AdjustTime(t *testing.T) {
 	backend := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
+	defer backend.Close()
 
 	prevTime := backend.pendingBlock.Time()
 	err := backend.AdjustTime(time.Second)
@@ -150,6 +153,7 @@ func TestSimulatedBackend_BalanceAt(t *testing.T) {
 			testAddr: {Balance: expectedBal},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	bal, err := backend.BalanceAt(bgCtx, testAddr, nil)
@@ -166,6 +170,7 @@ func TestSimulatedBackend_BlockByHash(t *testing.T) {
 	backend := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	block, err := backend.BlockByNumber(bgCtx, nil)
@@ -186,6 +191,7 @@ func TestSimulatedBackend_BlockByNumber(t *testing.T) {
 	backend := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	block, err := backend.BlockByNumber(bgCtx, nil)
@@ -221,6 +227,7 @@ func TestSimulatedBackend_NonceAt(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	nonce, err := backend.NonceAt(bgCtx, testAddr, big.NewInt(0))
@@ -264,6 +271,7 @@ func TestSimulatedBackend_SendTransaction(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -298,6 +306,7 @@ func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -313,14 +322,77 @@ func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
 
-	backend.Commit()
-
-	// ensure tx is not and committed pending
+	// ensure tx is committed pending
 	receivedTx, pending, err := backend.TransactionByHash(bgCtx, signedTx.Hash())
 	if err != nil {
 		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
 	}
 	if !pending {
+		t.Errorf("expected transaction to be in pending state")
+	}
+	if receivedTx.Hash() != signedTx.Hash() {
+		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
+	}
+
+	backend.Commit()
+
+	// ensure tx is not and committed pending
+	receivedTx, pending, err = backend.TransactionByHash(bgCtx, signedTx.Hash())
+	if err != nil {
+		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
+	}
+	if pending {
+		t.Errorf("expected transaction to not be in pending state")
+	}
+	if receivedTx.Hash() != signedTx.Hash() {
+		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
+	}
+}
+
+func TestSimulatedBackend_TransactionByHashWithBlockNum(t *testing.T) {
+	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
+
+	backend := NewSimulatedBackend(
+		core.GenesisAlloc{
+			testAddr: {Balance: big.NewInt(10000000000)},
+		}, 10000000,
+	)
+	defer backend.Close()
+	bgCtx := context.Background()
+
+	// create a signed transaction to send
+	tx := types.NewTransaction(uint64(0), testAddr, big.NewInt(1000), uint64(21000), big.NewInt(1), nil)
+	signedTx, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
+	if err != nil {
+		t.Errorf("could not sign tx: %v", err)
+	}
+
+	// send tx to simulated backend
+	err = backend.SendTransaction(bgCtx, signedTx)
+	if err != nil {
+		t.Errorf("could not add tx to pending block: %v", err)
+	}
+
+	// ensure tx is committed pending
+	receivedTx, blockHex, err := backend.TransactionByHashWithBlockNum(bgCtx, signedTx.Hash())
+	if err != nil {
+		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
+	}
+	if blockHex != "0x0" {
+		t.Errorf("expected transaction to be in pending state with nil block number")
+	}
+	if receivedTx.Hash() != signedTx.Hash() {
+		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
+	}
+
+	backend.Commit()
+
+	// ensure tx is not and committed pending
+	receivedTx, blockHex, err = backend.TransactionByHashWithBlockNum(bgCtx, signedTx.Hash())
+	if err != nil {
+		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
+	}
+	if blockHex != "0x1" {
 		t.Errorf("expected transaction to not be in pending state")
 	}
 	if receivedTx.Hash() != signedTx.Hash() {
@@ -332,6 +404,7 @@ func TestSimulatedBackend_EstimateGas(t *testing.T) {
 	backend := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
@@ -358,6 +431,7 @@ func TestSimulatedBackend_HeaderByHash(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	header, err := backend.HeaderByNumber(bgCtx, nil)
@@ -382,6 +456,7 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	latestBlockHeader, err := backend.HeaderByNumber(bgCtx, nil)
@@ -436,6 +511,7 @@ func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	// expect pending nonce to be 0 since account has not been used
@@ -486,6 +562,7 @@ func TestSimulatedBackend_PendingNonceAt(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	// expect pending nonce to be 0 since account has not been used
@@ -548,6 +625,7 @@ func TestSimulatedBackend_TransactionReceipt(t *testing.T) {
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -579,6 +657,7 @@ func TestSimulatedBackend_SuggestGasPrice(t *testing.T) {
 		core.GenesisAlloc{},
 		10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 	gasPrice, err := backend.SuggestGasPrice(bgCtx)
 	if err != nil {
@@ -597,6 +676,7 @@ func TestSimulatedBackend_PendingCodeAt(t *testing.T) {
 		},
 		10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 	code, err := backend.CodeAt(bgCtx, testAddr, nil)
 	if err != nil {
@@ -637,6 +717,7 @@ func TestSimulatedBackend_CodeAt(t *testing.T) {
 		},
 		10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 	code, err := backend.CodeAt(bgCtx, testAddr, nil)
 	if err != nil {
@@ -680,6 +761,7 @@ func TestSimulatedBackend_CallContract(t *testing.T) {
 		},
 		10000000,
 	)
+	defer backend.Close()
 	bgCtx := context.Background()
 
 	parsed, err := abi.JSON(strings.NewReader(abiJSON))
@@ -713,44 +795,5 @@ func TestSimulatedBackend_CallContract(t *testing.T) {
 	// use strings contains since actual response is padded with many \x00 bytes and a space
 	if !strings.Contains(string(res), "hello world") {
 		t.Errorf("response from calling contract was expected to be 'hello world' instead received %v", string(res))
-	}
-}
-
-func TestSimulatedBackend_FilterLogs(t *testing.T) {
-	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
-	backend := NewSimulatedBackend(
-		core.GenesisAlloc{
-			testAddr: {Balance: big.NewInt(10000000000)},
-		},
-		10000000,
-	)
-	bgCtx := context.Background()
-
-	// deploy a contract to create a log
-	parsed, err := abi.JSON(strings.NewReader(abiJSON))
-	if err != nil {
-		t.Errorf("could not get code at test addr: %v", err)
-	}
-	auth := bind.NewKeyedTransactor(testKey)
-	contractAddr, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(abiBin), backend)
-	if err != nil {
-		t.Errorf("could not deploy contract: %v tx: %v contract: %v", err, tx, contract)
-	}
-
-	backend.Commit()
-
-	query := ethereum.FilterQuery{
-		BlockHash: nil,
-		FromBlock: nil,
-		ToBlock:   nil,
-		Addresses: []common.Address{testAddr, contractAddr},
-	}
-	logs, err := backend.FilterLogs(bgCtx, query)
-	if err != nil {
-		t.Errorf("could not filter logs: %v", err)
-	}
-
-	for _, l := range logs {
-		t.Error(l)
 	}
 }

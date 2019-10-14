@@ -53,8 +53,10 @@ var (
 )
 
 // SimulatedBackend implements bind.ContractBackend, simulating a blockchain in
-// the background. It also implements interfaces.ChainReader and interfaces.TransactionReader.
-// Its main purpose is to allow easily testing contract bindings.
+// the background. Its main purpose is to allow easily testing contract bindings.
+// Simulated backend implements the following interfaces:
+// ChainReader, ChainStateReader, ContractBackend, ContractCaller, ContractFilterer, ContractTransactor,
+// DeployBackend, GasEstimator, GasPricer, LogFilterer, PendingContractCaller, TransactionReader, and TransactionSender
 type SimulatedBackend struct {
 	database   ethdb.Database   // In memory database to store our testing data
 	blockchain *core.BlockChain // Ethereum blockchain to handle the consensus
@@ -174,22 +176,11 @@ func (b *SimulatedBackend) StorageAt(ctx context.Context, contract common.Addres
 	return val[:], nil
 }
 
-// SyncProgress retrieves the progress of the client syncing with the simulated backend
-// Since there is no delay in synchronisation, we can assume that the simulated backend
-// knows the current state of the chain.
-func (d *SimulatedBackend) SyncProgress(ctx context.Context) (*ethereum.SyncProgress, error) {
-	current := d.blockchain.CurrentBlock().NumberU64()
-	return &ethereum.SyncProgress{
-		StartingBlock: uint64(0),
-		CurrentBlock:  current,
-		HighestBlock:  current,
-		PulledStates:  current,
-		KnownStates:   current,
-	}, nil
-}
-
 // TransactionReceipt returns the receipt of a transaction.
 func (b *SimulatedBackend) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	receipt, _, _, _ := rawdb.ReadReceipt(b.database, txHash, b.config)
 	return receipt, nil
 }
@@ -215,23 +206,49 @@ func (b *SimulatedBackend) TransactionByHash(ctx context.Context, txHash common.
 
 // TransactionByHash returns the transaction with the given hash.
 func (b *SimulatedBackend) TransactionByHashWithBlockNum(ctx context.Context, txHash common.Hash) (tx *types.Transaction, blockHexString string, err error) {
-	transaction, _, blockNumber, _ := rawdb.ReadTransaction(b.database, txHash)
-	return transaction, hexutil.EncodeUint64(blockNumber), nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	tx = b.pendingBlock.Transaction(txHash)
+	if tx != nil {
+		return tx, hexutil.EncodeUint64(0), nil
+	}
+
+	tx, _, blockNumber, _ := rawdb.ReadTransaction(b.database, txHash)
+	if tx != nil {
+		return tx, hexutil.EncodeUint64(blockNumber), nil
+	}
+	return nil, "0x0", ethereum.NotFound
 }
 
 func (b *SimulatedBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
-	block := b.blockchain.GetBlockByHash(hash)
-	if block == nil {
-		return nil, errBlockDoesNotExist
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if hash == b.pendingBlock.Hash() {
+		return b.pendingBlock, nil
 	}
-	return block, nil
+
+	block := b.blockchain.GetBlockByHash(hash)
+	if block != nil {
+		return block, nil
+	}
+
+	return nil, errBlockDoesNotExist
 }
 
 // BlockByNumber retrieves a block from the database by number, caching it
 // (associated with its hash) if found.
 func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if number == nil {
 		return b.blockchain.CurrentBlock(), nil
+	}
+
+	if number.Cmp(b.pendingBlock.Number()) == 0 {
+		return b.pendingBlock, nil
 	}
 
 	block := b.blockchain.GetBlockByNumber(uint64(number.Int64()))
@@ -244,6 +261,9 @@ func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (
 
 // HeaderByHash returns a block header from the current canonical chain.
 func (b *SimulatedBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	header := b.blockchain.GetHeaderByHash(hash)
 	if header == nil {
 		return nil, errBlockDoesNotExist
@@ -255,6 +275,9 @@ func (b *SimulatedBackend) HeaderByHash(ctx context.Context, hash common.Hash) (
 // HeaderByNumber returns a block header from the current canonical chain. If number is
 // nil, the latest known header is returned.
 func (b *SimulatedBackend) HeaderByNumber(ctx context.Context, block *big.Int) (*types.Header, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if block == nil {
 		return b.blockchain.CurrentHeader(), nil
 	}
@@ -262,6 +285,9 @@ func (b *SimulatedBackend) HeaderByNumber(ctx context.Context, block *big.Int) (
 }
 
 func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash common.Hash) (uint, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	block := b.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
 		return uint(0), errBlockDoesNotExist
@@ -271,6 +297,9 @@ func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash commo
 }
 
 func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	block := b.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
 		return nil, errBlockDoesNotExist
@@ -381,6 +410,9 @@ func (b *SimulatedBackend) EstimateGas(ctx context.Context, call ethereum.CallMs
 // callContract implements common code between normal and pending contract calls.
 // state is modified during execution, make sure to copy it if necessary.
 func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallMsg, block *types.Block, statedb *state.StateDB) ([]byte, uint64, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	// Ensure message is initialized properly.
 	if call.GasPrice == nil {
 		call.GasPrice = big.NewInt(1)
@@ -532,6 +564,7 @@ func (b *SimulatedBackend) SubscribeNewHead(ctx context.Context, ch chan<- *type
 func (b *SimulatedBackend) AdjustTime(adjustment time.Duration) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	blocks, _ := core.GenerateChain(b.config, b.blockchain.CurrentBlock(), ethash.NewFaker(), b.database, 1, func(number int, block *core.BlockGen) {
 		for _, tx := range b.pendingBlock.Transactions() {
 			block.AddTx(tx)
