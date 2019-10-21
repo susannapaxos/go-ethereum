@@ -1,9 +1,7 @@
 package common
 
 import (
-	"bytes"
 	"fmt"
-	"strconv"
 	"strings"
 	"text/scanner"
 
@@ -13,10 +11,9 @@ import (
 type syntaxError string
 
 type Lexer struct {
-	sc                    *scanner.Scanner
-	next                  rune
-	comment               bytes.Buffer
-	useStringDescriptions bool
+	sc          *scanner.Scanner
+	next        rune
+	descComment string
 }
 
 type Ident struct {
@@ -24,13 +21,13 @@ type Ident struct {
 	Loc  errors.Location
 }
 
-func NewLexer(s string, useStringDescriptions bool) *Lexer {
+func NewLexer(s string) *Lexer {
 	sc := &scanner.Scanner{
 		Mode: scanner.ScanIdents | scanner.ScanInts | scanner.ScanFloats | scanner.ScanStrings,
 	}
 	sc.Init(strings.NewReader(s))
 
-	return &Lexer{sc: sc, useStringDescriptions: useStringDescriptions}
+	return &Lexer{sc: sc}
 }
 
 func (l *Lexer) CatchSyntaxError(f func()) (errRes *errors.QueryError) {
@@ -53,13 +50,13 @@ func (l *Lexer) Peek() rune {
 	return l.next
 }
 
-// ConsumeWhitespace consumes whitespace and tokens equivalent to whitespace (e.g. commas and comments).
+// Consume whitespace and tokens equivalent to whitespace (e.g. commas and comments).
 //
 // Consumed comment characters will build the description for the next type or field encountered.
-// The description is available from `DescComment()`, and will be reset every time `ConsumeWhitespace()` is
-// executed unless l.useStringDescriptions is set.
-func (l *Lexer) ConsumeWhitespace() {
-	l.comment.Reset()
+// The description is available from `DescComment()`, and will be reset every time `Consume()` is
+// executed.
+func (l *Lexer) Consume() {
+	l.descComment = ""
 	for {
 		l.next = l.sc.Scan()
 
@@ -78,35 +75,13 @@ func (l *Lexer) ConsumeWhitespace() {
 			// A comment can contain any Unicode code point except `LineTerminator` so a comment always
 			// consists of all code points starting with the '#' character up to but not including the
 			// line terminator.
+
 			l.consumeComment()
 			continue
 		}
 
 		break
 	}
-}
-
-// consumeDescription optionally consumes a description based on the June 2018 graphql spec if any are present.
-//
-// Single quote strings are also single line. Triple quote strings can be multi-line. Triple quote strings
-// whitespace trimmed on both ends.
-// If a description is found, consume any following comments as well
-//
-// http://facebook.github.io/graphql/June2018/#sec-Descriptions
-func (l *Lexer) consumeDescription() string {
-	// If the next token is not a string, we don't consume it
-	if l.next != scanner.String {
-		return ""
-	}
-	// Triple quote string is an empty "string" followed by an open quote due to the way the parser treats strings as one token
-	var desc string
-	if l.sc.Peek() == '"' {
-		desc = l.consumeTripleQuoteComment()
-	} else {
-		desc = l.consumeStringComment()
-	}
-	l.ConsumeWhitespace()
-	return desc
 }
 
 func (l *Lexer) ConsumeIdent() string {
@@ -126,12 +101,12 @@ func (l *Lexer) ConsumeKeyword(keyword string) {
 	if l.next != scanner.Ident || l.sc.TokenText() != keyword {
 		l.SyntaxError(fmt.Sprintf("unexpected %q, expecting %q", l.sc.TokenText(), keyword))
 	}
-	l.ConsumeWhitespace()
+	l.Consume()
 }
 
 func (l *Lexer) ConsumeLiteral() *BasicLit {
 	lit := &BasicLit{Type: l.next, Text: l.sc.TokenText()}
-	l.ConsumeWhitespace()
+	l.Consume()
 	return lit
 }
 
@@ -139,16 +114,11 @@ func (l *Lexer) ConsumeToken(expected rune) {
 	if l.next != expected {
 		l.SyntaxError(fmt.Sprintf("unexpected %q, expecting %s", l.sc.TokenText(), scanner.TokenString(expected)))
 	}
-	l.ConsumeWhitespace()
+	l.Consume()
 }
 
 func (l *Lexer) DescComment() string {
-	comment := l.comment.String()
-	desc := l.consumeDescription()
-	if l.useStringDescriptions {
-		return desc
-	}
-	return comment
+	return l.descComment
 }
 
 func (l *Lexer) SyntaxError(message string) {
@@ -162,45 +132,11 @@ func (l *Lexer) Location() errors.Location {
 	}
 }
 
-func (l *Lexer) consumeTripleQuoteComment() string {
-	l.next = l.sc.Next()
-	if l.next != '"' {
-		panic("consumeTripleQuoteComment used in wrong context: no third quote?")
-	}
-
-	var buf bytes.Buffer
-	var numQuotes int
-	for {
-		l.next = l.sc.Next()
-		if l.next == '"' {
-			numQuotes++
-		} else {
-			numQuotes = 0
-		}
-		buf.WriteRune(l.next)
-		if numQuotes == 3 || l.next == scanner.EOF {
-			break
-		}
-	}
-	val := buf.String()
-	val = val[:len(val)-numQuotes]
-	val = strings.TrimSpace(val)
-	return val
-}
-
-func (l *Lexer) consumeStringComment() string {
-	val, err := strconv.Unquote(l.sc.TokenText())
-	if err != nil {
-		panic(err)
-	}
-	return val
-}
-
 // consumeComment consumes all characters from `#` to the first encountered line terminator.
-// The characters are appended to `l.comment`.
+// The characters are appended to `l.descComment`.
 func (l *Lexer) consumeComment() {
 	if l.next != '#' {
-		panic("consumeComment used in wrong context")
+		return
 	}
 
 	// TODO: count and trim whitespace so we can dedent any following lines.
@@ -208,8 +144,9 @@ func (l *Lexer) consumeComment() {
 		l.sc.Next()
 	}
 
-	if l.comment.Len() > 0 {
-		l.comment.WriteRune('\n')
+	if l.descComment != "" {
+		// TODO: use a bytes.Buffer or strings.Builder instead of this.
+		l.descComment += "\n"
 	}
 
 	for {
@@ -217,6 +154,8 @@ func (l *Lexer) consumeComment() {
 		if next == '\r' || next == '\n' || next == scanner.EOF {
 			break
 		}
-		l.comment.WriteRune(next)
+
+		// TODO: use a bytes.Buffer or strings.Build instead of this.
+		l.descComment += string(next)
 	}
 }

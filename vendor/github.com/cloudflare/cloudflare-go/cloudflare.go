@@ -137,7 +137,6 @@ func (api *API) SetAuthType(authType int) {
 
 // ZoneIDByName retrieves a zone's ID from the name.
 func (api *API) ZoneIDByName(zoneName string) (string, error) {
-	zoneName = normalizeZoneName(zoneName)
 	res, err := api.ListZonesContext(context.TODO(), WithZoneFilter(zoneName))
 	if err != nil {
 		return "", errors.Wrap(err, "ListZonesContext command failed")
@@ -423,7 +422,7 @@ type reqOption struct {
 // WithZoneFilter applies a filter based on zone name.
 func WithZoneFilter(zone string) ReqOption {
 	return func(opt *reqOption) {
-		opt.params.Set("name", normalizeZoneName(zone))
+		opt.params.Set("name", zone)
 	}
 }
 

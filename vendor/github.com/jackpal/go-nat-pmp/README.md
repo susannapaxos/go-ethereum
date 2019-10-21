@@ -6,7 +6,7 @@ IP address of a firewall.
 
 NAT-PMP is supported by Apple brand routers and open source routers like Tomato and DD-WRT.
 
-See https://tools.ietf.org/rfc/rfc6886.txt
+See http://tools.ietf.org/html/draft-cheshire-nat-pmp-03
 
 
 [![Build Status](https://travis-ci.org/jackpal/go-nat-pmp.svg)](https://travis-ci.org/jackpal/go-nat-pmp)
@@ -20,12 +20,11 @@ Usage
 -----
 
     import (
-        "fmt"
         "github.com/jackpal/gateway"
         natpmp "github.com/jackpal/go-nat-pmp"
     )
 
-    gatewayIP, err := gateway.DiscoverGateway()
+    gatewayIP, err = gateway.DiscoverGateway()
     if err != nil {
         return
     }
@@ -35,7 +34,7 @@ Usage
     if err != nil {
         return
     }
-    fmt.Println("External IP address: %v", response.ExternalIPAddress)
+    print("External IP address:", response.ExternalIPAddress)
 
 Clients
 -------
