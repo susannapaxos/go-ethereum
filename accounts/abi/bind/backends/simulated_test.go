@@ -472,7 +472,7 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 
 	backend.Commit()
 
-	latestBlockHeader, err = backend.HeaderByNumber(bgCtx, big.NewInt(1))
+	latestBlockHeader, err = backend.HeaderByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get header for blockheight of 1: %v", err)
 	}
@@ -500,7 +500,57 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 }
 
 func TestSimulatedBackend_TransactionCount(t *testing.T) {
+	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
+	backend := NewSimulatedBackend(
+		core.GenesisAlloc{
+			testAddr: {Balance: big.NewInt(10000000000)},
+		}, 10000000,
+	)
+	defer backend.Close()
+	bgCtx := context.Background()
+	currentBlock, err := backend.BlockByNumber(bgCtx, nil)
+	if err != nil || currentBlock == nil {
+		t.Error("could not get current block")
+	}
+
+	count, err := backend.TransactionCount(bgCtx, currentBlock.Hash())
+	if err != nil {
+		t.Error("could not get current block's transaction count")
+	}
+
+	if count != 0 {
+		t.Errorf("expected transaction count of %v does not match actual count of %v", 0, count)
+	}
+
+	// create a signed transaction to send
+	tx := types.NewTransaction(uint64(0), testAddr, big.NewInt(1000), uint64(21000), big.NewInt(1), nil)
+	signedTx, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
+	if err != nil {
+		t.Errorf("could not sign tx: %v", err)
+	}
+
+	// send tx to simulated backend
+	err = backend.SendTransaction(bgCtx, signedTx)
+	if err != nil {
+		t.Errorf("could not add tx to pending block: %v", err)
+	}
+
+	backend.Commit()
+
+	lastBlock, err := backend.BlockByNumber(bgCtx, nil)
+	if err != nil {
+		t.Errorf("could not get header for tip of chain: %v", err)
+	}
+
+	count, err = backend.TransactionCount(bgCtx, lastBlock.Hash())
+	if err != nil {
+		t.Error("could not get current block's transaction count")
+	}
+
+	if count != 1 {
+		t.Errorf("expected transaction count of %v does not match actual count of %v", 1, count)
+	}
 }
 
 func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
@@ -753,7 +803,7 @@ func TestSimulatedBackend_CodeAt(t *testing.T) {
 
 // When receive("X") is called with sender 0x00... and value 1, it produces this tx receipt:
 //   receipt{status=1 cgas=23949 bloom=00000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000040200000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 logs=[log: b6818c8064f645cd82d99b59a1a267d6d61117ef [75fd880d39c1daf53b6547ab6cb59451fc6452d27caa90e5b6649dd8293b9eed] 000000000000000000000000376c47978271565f56deb45495afa69e59c16ab200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000158 9ae378b6d4409eada347a5dc0c180f186cb62dc68fcc0f043425eb917335aa28 0 95d429d309bb9d753954195fe2d69bd140b4ae731b9b5b605c34323de162cf00 0]}
-func TestSimulatedBackend_CallContract(t *testing.T) {
+func TestSimulatedBackend_PendingAndCallContract(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 	backend := NewSimulatedBackend(
 		core.GenesisAlloc{
@@ -773,15 +823,33 @@ func TestSimulatedBackend_CallContract(t *testing.T) {
 	if err != nil {
 		t.Errorf("could not deploy contract: %v", err)
 	}
-	backend.Commit()
 
 	input, err := parsed.Pack("receive", []byte("X"))
 	if err != nil {
 		t.Errorf("could pack receive function on contract: %v", err)
 	}
 
+	// make sure you can call the contract in pending state
+	res, err := backend.PendingCallContract(bgCtx, ethereum.CallMsg{
+		From: testAddr,
+		To:   &addr,
+		Data: input,
+	})
+	if err != nil {
+		t.Errorf("could not call receive method on contract: %v", err)
+	}
+	if len(res) == 0 {
+		t.Errorf("result of contract call was empty: %v", res)
+	}
+	// use strings contains since actual response is padded with many \x00 bytes and a space
+	if !strings.Contains(string(res), "hello world") {
+		t.Errorf("response from calling contract was expected to be 'hello world' instead received %v", string(res))
+	}
+
+	backend.Commit()
+
 	// make sure you can call the contract
-	res, err := backend.CallContract(bgCtx, ethereum.CallMsg{
+	res, err = backend.CallContract(bgCtx, ethereum.CallMsg{
 		From: testAddr,
 		To:   &addr,
 		Data: input,
@@ -797,3 +865,4 @@ func TestSimulatedBackend_CallContract(t *testing.T) {
 		t.Errorf("response from calling contract was expected to be 'hello world' instead received %v", string(res))
 	}
 }
+

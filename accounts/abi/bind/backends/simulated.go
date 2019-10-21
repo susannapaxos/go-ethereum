@@ -243,12 +243,8 @@ func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if number == nil {
+	if number == nil || number.Cmp(b.pendingBlock.Number()) == 0 {
 		return b.blockchain.CurrentBlock(), nil
-	}
-
-	if number.Cmp(b.pendingBlock.Number()) == 0 {
-		return b.pendingBlock, nil
 	}
 
 	block := b.blockchain.GetBlockByNumber(uint64(number.Int64()))
@@ -278,9 +274,10 @@ func (b *SimulatedBackend) HeaderByNumber(ctx context.Context, block *big.Int) (
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if block == nil {
+	if block == nil || block.Cmp(b.pendingBlock.Number()) == 0 {
 		return b.blockchain.CurrentHeader(), nil
 	}
+
 	return b.blockchain.GetHeaderByNumber(uint64(block.Int64())), nil
 }
 
@@ -360,9 +357,6 @@ func (b *SimulatedBackend) SuggestGasPrice(ctx context.Context) (*big.Int, error
 // EstimateGas executes the requested code against the currently pending block/state and
 // returns the used amount of gas.
 func (b *SimulatedBackend) EstimateGas(ctx context.Context, call ethereum.CallMsg) (uint64, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	// Determine the lowest and highest possible gas limits to binary search in between
 	var (
 		lo  uint64 = params.TxGas - 1
@@ -410,9 +404,6 @@ func (b *SimulatedBackend) EstimateGas(ctx context.Context, call ethereum.CallMs
 // callContract implements common code between normal and pending contract calls.
 // state is modified during execution, make sure to copy it if necessary.
 func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallMsg, block *types.Block, statedb *state.StateDB) ([]byte, uint64, bool, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	// Ensure message is initialized properly.
 	if call.GasPrice == nil {
 		call.GasPrice = big.NewInt(1)
