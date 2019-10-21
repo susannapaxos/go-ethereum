@@ -221,6 +221,7 @@ func (b *SimulatedBackend) TransactionByHashWithBlockNum(ctx context.Context, tx
 	return nil, "0x0", ethereum.NotFound
 }
 
+// BlockByHash retrieves a block based on the block hash
 func (b *SimulatedBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -260,6 +261,11 @@ func (b *SimulatedBackend) HeaderByHash(ctx context.Context, hash common.Hash) (
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+
+	if hash == b.pendingBlock.Hash() {
+		return b.pendingBlock.Header(), nil
+	}
+
 	header := b.blockchain.GetHeaderByHash(hash)
 	if header == nil {
 		return nil, errBlockDoesNotExist
@@ -281,9 +287,14 @@ func (b *SimulatedBackend) HeaderByNumber(ctx context.Context, block *big.Int) (
 	return b.blockchain.GetHeaderByNumber(uint64(block.Int64())), nil
 }
 
+// TransactionCount returns the number of transactions in a given block
 func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash common.Hash) (uint, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if blockHash == b.pendingBlock.Hash() {
+		return uint(b.pendingBlock.Transactions().Len()), nil
+	}
 
 	block := b.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
@@ -293,9 +304,14 @@ func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash commo
 	return uint(block.Transactions().Len()), nil
 }
 
+// TransactionInBlock returns the transaction for a specific block at a specific index
 func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if blockHash == b.pendingBlock.Hash() {
+		return b.pendingBlock.Transactions()[index], nil
+	}
 
 	block := b.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
@@ -525,6 +541,7 @@ func (b *SimulatedBackend) SubscribeFilterLogs(ctx context.Context, query ethere
 	}), nil
 }
 
+// SubscribeNewHead returns an event subscription for a new header
 func (b *SimulatedBackend) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
 	// subscribe to a new head
 	sink := make(chan *types.Header)
