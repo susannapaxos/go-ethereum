@@ -286,13 +286,20 @@ func (b *SimulatedBackend) TransactionCount(ctx context.Context, blockHash commo
 	return uint(block.Transactions().Len()), nil
 }
 
+
+
 // TransactionInBlock returns the transaction for a specific block at a specific index
 func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if blockHash == b.pendingBlock.Hash() {
-		return b.pendingBlock.Transactions()[index], nil
+		transactions := b.pendingBlock.Transactions()
+		if uint(len(transactions)) < index + 1 {
+			return nil, errTransactionDoesNotExist
+		}
+
+		return transactions[index], nil
 	}
 
 	block := b.blockchain.GetBlockByHash(blockHash)
@@ -301,11 +308,11 @@ func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash com
 	}
 
 	transactions := block.Transactions()
-	if len(transactions) == 0 || uint(len(transactions)) < index + 1 {
+	if uint(len(transactions)) < index + 1 {
 		return nil, errTransactionDoesNotExist
 	}
 
-	return block.Transactions()[index], nil
+	return transactions[index], nil
 }
 
 // PendingCodeAt returns the code associated with an account in the pending state.
