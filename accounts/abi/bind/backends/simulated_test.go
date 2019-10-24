@@ -105,22 +105,22 @@ const deployedCode = `60806040526004361061003b576000357c010000000000000000000000
 func TestNewSimulatedBackend(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 	expectedBal := big.NewInt(10000000000)
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: expectedBal},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 
-	if backend.config != params.AllEthashProtocolChanges {
-		t.Errorf("expected backend config to equal params.AllEthashProtocolChanges, got %v", backend.config)
+	if sim.config != params.AllEthashProtocolChanges {
+		t.Errorf("expected sim config to equal params.AllEthashProtocolChanges, got %v", sim.config)
 	}
 
-	if backend.blockchain.Config() != params.AllEthashProtocolChanges {
-		t.Errorf("expected backend blockchain config to equal params.AllEthashProtocolChanges, got %v", backend.config)
+	if sim.blockchain.Config() != params.AllEthashProtocolChanges {
+		t.Errorf("expected sim blockchain config to equal params.AllEthashProtocolChanges, got %v", sim.config)
 	}
 
-	statedb, _ := backend.blockchain.State()
+	statedb, _ := sim.blockchain.State()
 	bal := statedb.GetBalance(testAddr)
 	if bal.Cmp(expectedBal) != 0 {
 		t.Errorf("expected balance for test address not received. expected: %v actual: %v", expectedBal, bal)
@@ -128,17 +128,17 @@ func TestNewSimulatedBackend(t *testing.T) {
 }
 
 func TestSimulatedBackend_AdjustTime(t *testing.T) {
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 
-	prevTime := backend.pendingBlock.Time()
-	err := backend.AdjustTime(time.Second)
+	prevTime := sim.pendingBlock.Time()
+	err := sim.AdjustTime(time.Second)
 	if err != nil {
 		t.Error(err)
 	}
-	newTime := backend.pendingBlock.Time()
+	newTime := sim.pendingBlock.Time()
 
 	if newTime - prevTime != uint64(time.Second.Seconds()) {
 		t.Errorf("adjusted time not equal to a second. prev: %v, new: %v", prevTime, newTime)
@@ -148,15 +148,15 @@ func TestSimulatedBackend_AdjustTime(t *testing.T) {
 func TestSimulatedBackend_BalanceAt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 	expectedBal := big.NewInt(10000000000)
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: expectedBal},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	bal, err := backend.BalanceAt(bgCtx, testAddr, nil)
+	bal, err := sim.BalanceAt(bgCtx, testAddr, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -167,17 +167,17 @@ func TestSimulatedBackend_BalanceAt(t *testing.T) {
 }
 
 func TestSimulatedBackend_BlockByHash(t *testing.T) {
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	block, err := backend.BlockByNumber(bgCtx, nil)
+	block, err := sim.BlockByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
-	blockByHash, err := backend.BlockByHash(bgCtx, block.Hash())
+	blockByHash, err := sim.BlockByHash(bgCtx, block.Hash())
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
@@ -188,13 +188,13 @@ func TestSimulatedBackend_BlockByHash(t *testing.T) {
 }
 
 func TestSimulatedBackend_BlockByNumber(t *testing.T) {
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	block, err := backend.BlockByNumber(bgCtx, nil)
+	block, err := sim.BlockByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
@@ -203,9 +203,9 @@ func TestSimulatedBackend_BlockByNumber(t *testing.T) {
 	}
 
 	// create one block
-	backend.Commit()
+	sim.Commit()
 
-	block, err = backend.BlockByNumber(bgCtx, nil)
+	block, err = sim.BlockByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSimulatedBackend_BlockByNumber(t *testing.T) {
 		t.Errorf("did not get most recent block, instead got block number %v", block.NumberU64())
 	}
 
-	blockByNumber, err := backend.BlockByNumber(bgCtx, big.NewInt(1))
+	blockByNumber, err := sim.BlockByNumber(bgCtx, big.NewInt(1))
 	if blockByNumber.Hash() != block.Hash() {
 		t.Errorf("did not get the same block with height of 1 as before")
 	}
@@ -222,15 +222,15 @@ func TestSimulatedBackend_BlockByNumber(t *testing.T) {
 func TestSimulatedBackend_NonceAt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	nonce, err := backend.NonceAt(bgCtx, testAddr, big.NewInt(0))
+	nonce, err := sim.NonceAt(bgCtx, testAddr, big.NewInt(0))
 	if err != nil {
 		t.Errorf("could not get nonce for test addr: %v", err)
 	}
@@ -247,13 +247,13 @@ func TestSimulatedBackend_NonceAt(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
-	backend.Commit()
+	sim.Commit()
 
-	newNonce, err := backend.NonceAt(bgCtx, testAddr, big.NewInt(1))
+	newNonce, err := sim.NonceAt(bgCtx, testAddr, big.NewInt(1))
 	if err != nil {
 		t.Errorf("could not get nonce for test addr: %v", err)
 	}
@@ -266,12 +266,12 @@ func TestSimulatedBackend_NonceAt(t *testing.T) {
 func TestSimulatedBackend_SendTransaction(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -282,13 +282,13 @@ func TestSimulatedBackend_SendTransaction(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
-	backend.Commit()
+	sim.Commit()
 
-	block, err := backend.BlockByNumber(bgCtx, big.NewInt(1))
+	block, err := sim.BlockByNumber(bgCtx, big.NewInt(1))
 	if err != nil {
 		t.Errorf("could not get block at height 1: %v", err)
 	}
@@ -301,12 +301,12 @@ func TestSimulatedBackend_SendTransaction(t *testing.T) {
 func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -317,13 +317,13 @@ func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
 
 	// ensure tx is committed pending
-	receivedTx, pending, err := backend.TransactionByHash(bgCtx, signedTx.Hash())
+	receivedTx, pending, err := sim.TransactionByHash(bgCtx, signedTx.Hash())
 	if err != nil {
 		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
 	}
@@ -334,10 +334,10 @@ func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
 	}
 
-	backend.Commit()
+	sim.Commit()
 
 	// ensure tx is not and committed pending
-	receivedTx, pending, err = backend.TransactionByHash(bgCtx, signedTx.Hash())
+	receivedTx, pending, err = sim.TransactionByHash(bgCtx, signedTx.Hash())
 	if err != nil {
 		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
 	}
@@ -349,66 +349,15 @@ func TestSimulatedBackend_TransactionByHash(t *testing.T) {
 	}
 }
 
-func TestSimulatedBackend_TransactionByHashWithBlockNum(t *testing.T) {
-	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
-
-	backend := NewSimulatedBackend(
-		core.GenesisAlloc{
-			testAddr: {Balance: big.NewInt(10000000000)},
-		}, 10000000,
-	)
-	defer backend.Close()
-	bgCtx := context.Background()
-
-	// create a signed transaction to send
-	tx := types.NewTransaction(uint64(0), testAddr, big.NewInt(1000), uint64(21000), big.NewInt(1), nil)
-	signedTx, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
-	if err != nil {
-		t.Errorf("could not sign tx: %v", err)
-	}
-
-	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
-	if err != nil {
-		t.Errorf("could not add tx to pending block: %v", err)
-	}
-
-	// ensure tx is committed pending
-	receivedTx, blockHex, err := backend.TransactionByHashWithBlockNum(bgCtx, signedTx.Hash())
-	if err != nil {
-		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
-	}
-	if blockHex != "0x0" {
-		t.Errorf("expected transaction to be in pending state with nil block number")
-	}
-	if receivedTx.Hash() != signedTx.Hash() {
-		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
-	}
-
-	backend.Commit()
-
-	// ensure tx is not and committed pending
-	receivedTx, blockHex, err = backend.TransactionByHashWithBlockNum(bgCtx, signedTx.Hash())
-	if err != nil {
-		t.Errorf("could not get transaction by hash %v: %v", signedTx.Hash(), err)
-	}
-	if blockHex != "0x1" {
-		t.Errorf("expected transaction to not be in pending state")
-	}
-	if receivedTx.Hash() != signedTx.Hash() {
-		t.Errorf("did not received committed transaction. expected hash %v got hash %v", signedTx.Hash(), receivedTx.Hash())
-	}
-}
-
 func TestSimulatedBackend_EstimateGas(t *testing.T) {
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	gas, err := backend.EstimateGas(bgCtx, ethereum.CallMsg{
+	gas, err := sim.EstimateGas(bgCtx, ethereum.CallMsg{
 		From:  testAddr,
 		To:    &testAddr,
 		Value: big.NewInt(1000),
@@ -426,19 +375,19 @@ func TestSimulatedBackend_EstimateGas(t *testing.T) {
 func TestSimulatedBackend_HeaderByHash(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	header, err := backend.HeaderByNumber(bgCtx, nil)
+	header, err := sim.HeaderByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
-	headerByHash, err := backend.HeaderByHash(bgCtx, header.Hash())
+	headerByHash, err := sim.HeaderByHash(bgCtx, header.Hash())
 	if err != nil {
 		t.Errorf("could not get recent block: %v", err)
 	}
@@ -451,15 +400,15 @@ func TestSimulatedBackend_HeaderByHash(t *testing.T) {
 func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
-	latestBlockHeader, err := backend.HeaderByNumber(bgCtx, nil)
+	latestBlockHeader, err := sim.HeaderByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get header for tip of chain: %v", err)
 	}
@@ -470,14 +419,14 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 		t.Errorf("expected block header number 0, instead got %v", latestBlockHeader.Number.Uint64())
 	}
 
-	backend.Commit()
+	sim.Commit()
 
-	latestBlockHeader, err = backend.HeaderByNumber(bgCtx, nil)
+	latestBlockHeader, err = sim.HeaderByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get header for blockheight of 1: %v", err)
 	}
 
-	blockHeader, err := backend.HeaderByNumber(bgCtx, big.NewInt(1))
+	blockHeader, err := sim.HeaderByNumber(bgCtx, big.NewInt(1))
 	if err != nil {
 		t.Errorf("could not get header for blockheight of 1: %v", err)
 	}
@@ -489,7 +438,7 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 		t.Errorf("did not get blockheader for block 1. instead got block %v", blockHeader.Number.Int64())
 	}
 
-	block, err := backend.BlockByNumber(bgCtx, big.NewInt(1))
+	block, err := sim.BlockByNumber(bgCtx, big.NewInt(1))
 	if err != nil {
 		t.Errorf("could not get block for blockheight of 1: %v", err)
 	}
@@ -502,19 +451,19 @@ func TestSimulatedBackend_HeaderByNumber(t *testing.T) {
 func TestSimulatedBackend_TransactionCount(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
-	currentBlock, err := backend.BlockByNumber(bgCtx, nil)
+	currentBlock, err := sim.BlockByNumber(bgCtx, nil)
 	if err != nil || currentBlock == nil {
 		t.Error("could not get current block")
 	}
 
-	count, err := backend.TransactionCount(bgCtx, currentBlock.Hash())
+	count, err := sim.TransactionCount(bgCtx, currentBlock.Hash())
 	if err != nil {
 		t.Error("could not get current block's transaction count")
 	}
@@ -531,19 +480,19 @@ func TestSimulatedBackend_TransactionCount(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
 
-	backend.Commit()
+	sim.Commit()
 
-	lastBlock, err := backend.BlockByNumber(bgCtx, nil)
+	lastBlock, err := sim.BlockByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get header for tip of chain: %v", err)
 	}
 
-	count, err = backend.TransactionCount(bgCtx, lastBlock.Hash())
+	count, err = sim.TransactionCount(bgCtx, lastBlock.Hash())
 	if err != nil {
 		t.Error("could not get current block's transaction count")
 	}
@@ -556,16 +505,16 @@ func TestSimulatedBackend_TransactionCount(t *testing.T) {
 func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	// expect pending nonce to be 0 since account has not been used
-	pendingNonce, err := backend.PendingNonceAt(bgCtx, testAddr)
+	pendingNonce, err := sim.PendingNonceAt(bgCtx, testAddr)
 	if err != nil {
 		t.Errorf("did not get the pending nonce: %v", err)
 	}
@@ -582,19 +531,19 @@ func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
 
-	backend.Commit()
+	sim.Commit()
 
-	lastBlock, err := backend.BlockByNumber(bgCtx, nil)
+	lastBlock, err := sim.BlockByNumber(bgCtx, nil)
 	if err != nil {
 		t.Errorf("could not get header for tip of chain: %v", err)
 	}
 
-	transaction, err := backend.TransactionInBlock(bgCtx, lastBlock.Hash(), uint(0))
+	transaction, err := sim.TransactionInBlock(bgCtx, lastBlock.Hash(), uint(0))
 	if err != nil {
 		t.Errorf("could not get transaction in the lastest block with hash %v: %v", lastBlock.Hash().String(), err)
 	}
@@ -607,16 +556,16 @@ func TestSimulatedBackend_TransactionInBlock(t *testing.T) {
 func TestSimulatedBackend_PendingNonceAt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	// expect pending nonce to be 0 since account has not been used
-	pendingNonce, err := backend.PendingNonceAt(bgCtx, testAddr)
+	pendingNonce, err := sim.PendingNonceAt(bgCtx, testAddr)
 	if err != nil {
 		t.Errorf("did not get the pending nonce: %v", err)
 	}
@@ -633,13 +582,13 @@ func TestSimulatedBackend_PendingNonceAt(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
 
 	// expect pending nonce to be 1 since account has submitted one transaction
-	pendingNonce, err = backend.PendingNonceAt(bgCtx, testAddr)
+	pendingNonce, err = sim.PendingNonceAt(bgCtx, testAddr)
 	if err != nil {
 		t.Errorf("did not get the pending nonce: %v", err)
 	}
@@ -654,10 +603,10 @@ func TestSimulatedBackend_PendingNonceAt(t *testing.T) {
 	if err != nil {
 		t.Errorf("could not sign tx: %v", err)
 	}
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 
 	// expect pending nonce to be 2 since account now has two transactions
-	pendingNonce, err = backend.PendingNonceAt(bgCtx, testAddr)
+	pendingNonce, err = sim.PendingNonceAt(bgCtx, testAddr)
 	if err != nil {
 		t.Errorf("did not get the pending nonce: %v", err)
 	}
@@ -670,12 +619,12 @@ func TestSimulatedBackend_PendingNonceAt(t *testing.T) {
 func TestSimulatedBackend_TransactionReceipt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
 
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		}, 10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	// create a signed transaction to send
@@ -686,13 +635,13 @@ func TestSimulatedBackend_TransactionReceipt(t *testing.T) {
 	}
 
 	// send tx to simulated backend
-	err = backend.SendTransaction(bgCtx, signedTx)
+	err = sim.SendTransaction(bgCtx, signedTx)
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
-	backend.Commit()
+	sim.Commit()
 
-	receipt, err := backend.TransactionReceipt(bgCtx, signedTx.Hash())
+	receipt, err := sim.TransactionReceipt(bgCtx, signedTx.Hash())
 	if err != nil {
 		t.Errorf("could not get transaction receipt: %v", err)
 	}
@@ -703,13 +652,13 @@ func TestSimulatedBackend_TransactionReceipt(t *testing.T) {
 }
 
 func TestSimulatedBackend_SuggestGasPrice(t *testing.T) {
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{},
 		10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
-	gasPrice, err := backend.SuggestGasPrice(bgCtx)
+	gasPrice, err := sim.SuggestGasPrice(bgCtx)
 	if err != nil {
 		t.Errorf("could not get gas price: %v", err)
 	}
@@ -720,15 +669,15 @@ func TestSimulatedBackend_SuggestGasPrice(t *testing.T) {
 
 func TestSimulatedBackend_PendingCodeAt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		},
 		10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
-	code, err := backend.CodeAt(bgCtx, testAddr, nil)
+	code, err := sim.CodeAt(bgCtx, testAddr, nil)
 	if err != nil {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
@@ -741,12 +690,12 @@ func TestSimulatedBackend_PendingCodeAt(t *testing.T) {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
 	auth := bind.NewKeyedTransactor(testKey)
-	contractAddr, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(abiBin), backend)
+	contractAddr, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(abiBin), sim)
 	if err != nil {
 		t.Errorf("could not deploy contract: %v tx: %v contract: %v", err, tx, contract)
 	}
 
-	code, err = backend.PendingCodeAt(bgCtx, contractAddr)
+	code, err = sim.PendingCodeAt(bgCtx, contractAddr)
 	if err != nil {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
@@ -761,15 +710,15 @@ func TestSimulatedBackend_PendingCodeAt(t *testing.T) {
 
 func TestSimulatedBackend_CodeAt(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		},
 		10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
-	code, err := backend.CodeAt(bgCtx, testAddr, nil)
+	code, err := sim.CodeAt(bgCtx, testAddr, nil)
 	if err != nil {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
@@ -782,13 +731,13 @@ func TestSimulatedBackend_CodeAt(t *testing.T) {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
 	auth := bind.NewKeyedTransactor(testKey)
-	contractAddr, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(abiBin), backend)
+	contractAddr, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(abiBin), sim)
 	if err != nil {
 		t.Errorf("could not deploy contract: %v tx: %v contract: %v", err, tx, contract)
 	}
 
-	backend.Commit()
-	code, err = backend.CodeAt(bgCtx, contractAddr, nil)
+	sim.Commit()
+	code, err = sim.CodeAt(bgCtx, contractAddr, nil)
 	if err != nil {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
@@ -805,13 +754,13 @@ func TestSimulatedBackend_CodeAt(t *testing.T) {
 //   receipt{status=1 cgas=23949 bloom=00000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000040200000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 logs=[log: b6818c8064f645cd82d99b59a1a267d6d61117ef [75fd880d39c1daf53b6547ab6cb59451fc6452d27caa90e5b6649dd8293b9eed] 000000000000000000000000376c47978271565f56deb45495afa69e59c16ab200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000158 9ae378b6d4409eada347a5dc0c180f186cb62dc68fcc0f043425eb917335aa28 0 95d429d309bb9d753954195fe2d69bd140b4ae731b9b5b605c34323de162cf00 0]}
 func TestSimulatedBackend_PendingAndCallContract(t *testing.T) {
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
-	backend := NewSimulatedBackend(
+	sim := NewSimulatedBackend(
 		core.GenesisAlloc{
 			testAddr: {Balance: big.NewInt(10000000000)},
 		},
 		10000000,
 	)
-	defer backend.Close()
+	defer sim.Close()
 	bgCtx := context.Background()
 
 	parsed, err := abi.JSON(strings.NewReader(abiJSON))
@@ -819,7 +768,7 @@ func TestSimulatedBackend_PendingAndCallContract(t *testing.T) {
 		t.Errorf("could not get code at test addr: %v", err)
 	}
 	contractAuth := bind.NewKeyedTransactor(testKey)
-	addr, _, _, err := bind.DeployContract(contractAuth, parsed, common.FromHex(abiBin), backend)
+	addr, _, _, err := bind.DeployContract(contractAuth, parsed, common.FromHex(abiBin), sim)
 	if err != nil {
 		t.Errorf("could not deploy contract: %v", err)
 	}
@@ -830,7 +779,7 @@ func TestSimulatedBackend_PendingAndCallContract(t *testing.T) {
 	}
 
 	// make sure you can call the contract in pending state
-	res, err := backend.PendingCallContract(bgCtx, ethereum.CallMsg{
+	res, err := sim.PendingCallContract(bgCtx, ethereum.CallMsg{
 		From: testAddr,
 		To:   &addr,
 		Data: input,
@@ -846,10 +795,10 @@ func TestSimulatedBackend_PendingAndCallContract(t *testing.T) {
 		t.Errorf("response from calling contract was expected to be 'hello world' instead received %v", string(res))
 	}
 
-	backend.Commit()
+	sim.Commit()
 
 	// make sure you can call the contract
-	res, err = backend.CallContract(bgCtx, ethereum.CallMsg{
+	res, err = sim.CallContract(bgCtx, ethereum.CallMsg{
 		From: testAddr,
 		To:   &addr,
 		Data: input,

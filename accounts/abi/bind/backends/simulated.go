@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
@@ -47,9 +46,10 @@ import (
 var _ bind.ContractBackend = (*SimulatedBackend)(nil)
 
 var (
-	errBlockNumberUnsupported = errors.New("simulatedBackend cannot access blocks other than the latest block")
-	errBlockDoesNotExist      = errors.New("block does not exist in blockchain")
-	errGasEstimationFailed    = errors.New("gas required exceeds allowance or always failing transaction")
+	errBlockNumberUnsupported  = errors.New("simulatedBackend cannot access blocks other than the latest block")
+	errBlockDoesNotExist       = errors.New("block does not exist in blockchain")
+	errTransactionDoesNotExist = errors.New("transaction does not exist")
+	errGasEstimationFailed     = errors.New("gas required exceeds allowance or always failing transaction")
 )
 
 // SimulatedBackend implements bind.ContractBackend, simulating a blockchain in
@@ -204,23 +204,6 @@ func (b *SimulatedBackend) TransactionByHash(ctx context.Context, txHash common.
 	return nil, false, ethereum.NotFound
 }
 
-// TransactionByHash returns the transaction with the given hash.
-func (b *SimulatedBackend) TransactionByHashWithBlockNum(ctx context.Context, txHash common.Hash) (tx *types.Transaction, blockHexString string, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	tx = b.pendingBlock.Transaction(txHash)
-	if tx != nil {
-		return tx, hexutil.EncodeUint64(0), nil
-	}
-
-	tx, _, blockNumber, _ := rawdb.ReadTransaction(b.database, txHash)
-	if tx != nil {
-		return tx, hexutil.EncodeUint64(blockNumber), nil
-	}
-	return nil, "0x0", ethereum.NotFound
-}
-
 // BlockByHash retrieves a block based on the block hash
 func (b *SimulatedBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
 	b.mu.Lock()
@@ -260,7 +243,6 @@ func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (
 func (b *SimulatedBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
 
 	if hash == b.pendingBlock.Hash() {
 		return b.pendingBlock.Header(), nil
@@ -316,6 +298,11 @@ func (b *SimulatedBackend) TransactionInBlock(ctx context.Context, blockHash com
 	block := b.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
 		return nil, errBlockDoesNotExist
+	}
+
+	transactions := block.Transactions()
+	if len(transactions) == 0 || uint(len(transactions)) < index + 1 {
+		return nil, errTransactionDoesNotExist
 	}
 
 	return block.Transactions()[index], nil
