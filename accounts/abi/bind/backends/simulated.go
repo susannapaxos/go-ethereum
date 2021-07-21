@@ -75,8 +75,11 @@ type SimulatedBackend struct {
 // NewSimulatedBackendWithDatabase creates a new binding backend based on the given database
 // and uses a simulated blockchain for testing purposes.
 // A simulated backend always uses chainID 1337.
-func NewSimulatedBackendWithDatabase(database ethdb.Database, alloc core.GenesisAlloc, gasLimit uint64) *SimulatedBackend {
-	genesis := core.Genesis{Config: params.AllEthashProtocolChanges, GasLimit: gasLimit, Alloc: alloc}
+func NewSimulatedBackendWithDatabase(config *params.ChainConfig, database ethdb.Database, alloc core.GenesisAlloc, gasLimit uint64) *SimulatedBackend {
+	if config == nil {
+		config = params.AllEthashProtocolChanges
+	}
+	genesis := core.Genesis{Config: config, GasLimit: gasLimit, Alloc: alloc}
 	genesis.MustCommit(database)
 	blockchain, _ := core.NewBlockChain(database, nil, genesis.Config, ethash.NewFaker(), vm.Config{}, nil, nil)
 
@@ -93,8 +96,8 @@ func NewSimulatedBackendWithDatabase(database ethdb.Database, alloc core.Genesis
 // NewSimulatedBackend creates a new binding backend using a simulated blockchain
 // for testing purposes.
 // A simulated backend always uses chainID 1337.
-func NewSimulatedBackend(alloc core.GenesisAlloc, gasLimit uint64) *SimulatedBackend {
-	return NewSimulatedBackendWithDatabase(rawdb.NewMemoryDatabase(), alloc, gasLimit)
+func NewSimulatedBackend(config *params.ChainConfig, alloc core.GenesisAlloc, gasLimit uint64) *SimulatedBackend {
+	return NewSimulatedBackendWithDatabase(config, rawdb.NewMemoryDatabase(), alloc, gasLimit)
 }
 
 // Close terminates the underlying blockchain's update loop.
